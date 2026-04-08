@@ -1,0 +1,214 @@
+type: dbt_cloud_multi_operator.components.dbt_cloud_multi_operator_component.DbtCloudMultiOperatorComponent
+
+attributes:
+  # ── Operator partitions (25 countries) ──────────────────
+  operators:
+    - BE
+    - NL
+    - DE
+    - FR
+    - UK
+    - ES
+    - IT
+    - PT
+    - GR
+    - CY
+    - RO
+    - BG
+    - CZ
+    - PL
+    - HU
+    - SK
+    - SI
+    - HR
+    - RS
+    - BA
+    - ME
+    - MK
+    - AL
+    - XK
+    - MD
+
+  # ── dbt Cloud / Databricks config ──────────────────────
+  dbt_cloud_account_id: 12345
+  dbt_cloud_api_token: "{{ env.DBT_CLOUD_API_TOKEN }}"
+  databricks_catalog: hooli_prod
+  concurrency_key: dbt_cloud
+  max_concurrency: 5
+  owners:
+    - "team:data-engineering"
+  kinds:
+    - databricks
+    - dbt-cloud
+    - delta
+
+  # ── BRONZE layer (per-operator separate tables) ────────
+  bronze:
+    - name: bronze_transactions
+      description: "Raw transaction data per operator. Each operator has a separate bronze table (e.g., bronze_BE_transactions). Loaded via dbt Cloud with operator_id variable."
+      dbt_cloud_job_id: 100001
+      dbt_select: "bronze_transactions"
+      schema: bronze
+      checks:
+        - name: check_bronze_transactions_not_empty
+          description: "Verify transaction row count > 0 per operator"
+
+    - name: bronze_customers
+      description: "Raw customer data per operator. Separate bronze table per country."
+      dbt_cloud_job_id: 100001
+      dbt_select: "bronze_customers"
+      schema: bronze
+
+    - name: bronze_products
+      description: "Raw product catalog per operator. Separate bronze table per country."
+      dbt_cloud_job_id: 100001
+      dbt_select: "bronze_products"
+      schema: bronze
+
+    - name: bronze_payments
+      description: "Raw payment events per operator. Separate bronze table per country."
+      dbt_cloud_job_id: 100001
+      dbt_select: "bronze_payments"
+      schema: bronze
+
+  # ── SILVER layer (consolidated, partitioned by operator) ─
+  silver:
+    - name: silver_transactions
+      description: "Cleaned transactions. Consolidated table partitioned by operator_id. Each dbt Cloud run processes one operator's disjoint slice."
+      dbt_cloud_job_id: 100002
+      dbt_select: "silver_transactions"
+      schema: silver
+      deps:
+        - bronze_transactions
+        - bronze_customers
+      eager: true
+      checks:
+        - name: check_silver_txn_unique
+          description: "Verify no duplicate transaction_ids within operator partition"
+
+    - name: silver_customers
+      description: "Cleaned customer dimension. Consolidated table partitioned by operator_id. Deduped, standardized names, validated emails."
+      dbt_cloud_job_id: 100002
+      dbt_select: "silver_customers"
+      schema: silver
+      deps:
+        - bronze_customers
+      eager: true
+
+    - name: silver_products
+      description: "Standardized product catalog. Consolidated table partitioned by operator_id. Normalized categories, currency conversion."
+      dbt_cloud_job_id: 100002
+      dbt_select: "silver_products"
+      schema: silver
+      deps:
+        - bronze_products
+      eager: true
+
+    - name: silver_payments
+      description: "Reconciled payment events. Consolidated table partitioned by operator_id. Matched to transactions, currency-normalized."
+      dbt_cloud_job_id: 100002
+      dbt_select: "silver_payments"
+      schema: silver
+      deps:
+        - bronze_payments
+        - bronze_transactions
+      eager: true
+      checks:
+        - name: check_silver_payments_fk
+          description: "Verify all payments link to valid transactions"
+
+    - name: silver_enriched_transactions
+      description: "Transaction-customer join. Enriches transactions with customer attributes. Consolidated table partitioned by operator_id."
+      dbt_cloud_job_id: 100002
+      dbt_select: "silver_enriched_transactions"
+      schema: silver
+      deps:
+        - silver_transactions
+        - silver_customers
+      eager: true
+
+  # ── GOLD layer (aggregated across ALL operators) ────────
+  gold:
+    - name: gold_revenue_summary
+      description: "Revenue summary by operator and month. Aggregates ALL operator partitions. Runs after every operator completes."
+      dbt_cloud_job_id: 100003
+      dbt_select: "gold_revenue_summary"
+      schema: gold
+      owners:
+        - "team:analytics"
+      deps:
+        - asset: silver_enriched_transactions
+          all_partitions: true
+      checks:
+        - name: check_all_operators_present
+          description: "Verify all 25 operators are represented"
+        - name: check_revenue_reconciliation
+          description: "Cross-operator revenue totals match silver layer"
+
+    - name: gold_customer_ltv
+      description: "Customer lifetime value by operator. Cross-operator cohort analysis and retention metrics."
+      dbt_cloud_job_id: 100003
+      dbt_select: "gold_customer_ltv"
+      schema: gold
+      owners:
+        - "team:analytics"
+      deps:
+        - asset: silver_customers
+          all_partitions: true
+        - asset: silver_enriched_transactions
+          all_partitions: true
+
+    - name: gold_product_performance
+      description: "Product performance across all operators. Revenue, units sold, and growth metrics."
+      dbt_cloud_job_id: 100003
+      dbt_select: "gold_product_performance"
+      schema: gold
+      owners:
+        - "team:analytics"
+      deps:
+        - asset: silver_products
+          all_partitions: true
+        - asset: silver_enriched_transactions
+          all_partitions: true
+
+    - name: gold_payment_reconciliation
+      description: "Payment reconciliation report. Cross-operator payment matching and settlement tracking."
+      dbt_cloud_job_id: 100003
+      dbt_select: "gold_payment_reconciliation"
+      schema: gold
+      owners:
+        - "team:analytics"
+      deps:
+        - asset: silver_payments
+          all_partitions: true
+        - asset: silver_enriched_transactions
+          all_partitions: true
+
+    - name: gold_operator_scorecard
+      description: "Executive KPI dashboard. Top-level operator comparison with revenue, customer, and product KPIs."
+      dbt_cloud_job_id: 100003
+      dbt_select: "gold_operator_scorecard"
+      schema: gold
+      owners:
+        - "team:analytics"
+      deps:
+        - asset: gold_revenue_summary
+        - asset: gold_customer_ltv
+        - asset: gold_product_performance
+
+  # ── Schedules ───────────────────────────────────────────
+  schedules:
+    - job_name: operator_pipeline
+      layers:
+        - bronze
+        - silver
+      cron: "0 2 * * *"
+      timezone: UTC
+      description: "Daily Bronze→Silver for ALL 25 operators at 2 AM UTC (max 5 concurrent dbt Cloud runs)"
+
+    - job_name: gold_refresh
+      layers:
+        - gold
+      cron: "0 6 * * *"
+      timezone: UTC
+      description: "Daily gold layer refresh at 6 AM UTC after all operators complete"
