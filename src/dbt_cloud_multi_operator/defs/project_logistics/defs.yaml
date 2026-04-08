@@ -1,0 +1,132 @@
+type: dbt_cloud_multi_operator.components.dbt_cloud_multi_operator_component.DbtCloudMultiOperatorComponent
+
+attributes:
+  project_name: logistics
+
+  # Same 25 operators, different dbt Cloud project
+  operators:
+    - BE
+    - NL
+    - DE
+    - FR
+    - UK
+    - ES
+    - IT
+    - PT
+    - GR
+    - CY
+    - RO
+    - BG
+    - CZ
+    - PL
+    - HU
+    - SK
+    - SI
+    - HR
+    - RS
+    - BA
+    - ME
+    - MK
+    - AL
+    - XK
+    - MD
+
+  dbt_cloud_account_id: 12345
+  dbt_cloud_api_token: "{{ env.DBT_CLOUD_API_TOKEN }}"
+  databricks_catalog: hooli_prod
+  concurrency_key: dbt_cloud
+  max_concurrency: 5
+  owners:
+    - "team:logistics-engineering"
+  kinds:
+    - databricks
+    - dbt-cloud
+    - delta
+
+  # ── BRONZE — logistics sources ─────────────────────────
+  bronze:
+    - name: bronze_shipments
+      description: "Raw shipment data per operator. Depends on Databricks transaction feed ingest."
+      dbt_cloud_job_id: 100010
+      dbt_select: "bronze_shipments"
+      schema: bronze
+      deps:
+        - ingest_transaction_feeds
+
+    - name: bronze_warehouses
+      description: "Warehouse and fulfillment center data per operator. Depends on geo enrichment."
+      dbt_cloud_job_id: 100010
+      dbt_select: "bronze_warehouses"
+      schema: bronze
+      deps:
+        - geo_enrichment_pipeline
+
+    - name: bronze_carriers
+      description: "Carrier and logistics partner data per operator."
+      dbt_cloud_job_id: 100010
+      dbt_select: "bronze_carriers"
+      schema: bronze
+
+  # ── SILVER — logistics models ──────────────────────────
+  silver:
+    - name: silver_shipments
+      description: "Cleaned shipment tracking. Consolidated table partitioned by operator_id."
+      dbt_cloud_job_id: 100011
+      dbt_select: "silver_shipments"
+      schema: silver
+      deps:
+        - bronze_shipments
+        - bronze_warehouses
+      eager: true
+
+    - name: silver_fulfillment
+      description: "Order fulfillment status. Joins shipments with payment data from the payments project."
+      dbt_cloud_job_id: 100011
+      dbt_select: "silver_fulfillment"
+      schema: silver
+      deps:
+        - silver_shipments
+        - bronze_carriers
+      eager: true
+
+  # ── GOLD — logistics analytics (cross-project deps) ───
+  gold:
+    - name: gold_delivery_performance
+      description: "Delivery SLA tracking across all operators. Cross-references payment reconciliation from the payments project."
+      dbt_cloud_job_id: 100012
+      dbt_select: "gold_delivery_performance"
+      schema: gold
+      owners:
+        - "team:logistics-analytics"
+      deps:
+        - asset: silver_fulfillment
+          all_partitions: true
+        - asset: gold_payment_reconciliation
+
+    - name: gold_warehouse_utilization
+      description: "Warehouse capacity and throughput metrics across all operators."
+      dbt_cloud_job_id: 100012
+      dbt_select: "gold_warehouse_utilization"
+      schema: gold
+      owners:
+        - "team:logistics-analytics"
+      deps:
+        - asset: silver_shipments
+          all_partitions: true
+
+  # ── Schedules ──────────────────────────────────────────
+  schedules:
+    - job_name: logistics_pipeline
+      layers:
+        - bronze
+        - silver
+      cron: "0 3 * * *"
+      timezone: UTC
+      description: "Daily logistics Bronze→Silver at 3 AM UTC (after payment ingests complete)"
+
+    - job_name: logistics_gold_refresh
+      layers:
+        - gold
+      cron: "0 7 * * *"
+      timezone: UTC
+      description: "Daily logistics gold refresh at 7 AM UTC"

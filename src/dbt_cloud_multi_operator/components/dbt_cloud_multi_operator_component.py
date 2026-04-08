@@ -168,6 +168,7 @@ class DbtCloudMultiOperatorComponent(dg.Component, dg.Model, dg.Resolvable):
     """
 
     # ── Configuration fields (map to YAML schema) ─────────
+    project_name: str = "default"
     operators: list[str]
     dbt_cloud_account_id: int = 0
     dbt_cloud_api_token: str = "{{ env.DBT_CLOUD_API_TOKEN }}"
@@ -289,7 +290,7 @@ class DbtCloudMultiOperatorComponent(dg.Component, dg.Model, dg.Resolvable):
             monitored = [j for j in all_jobs]
 
             @dg.run_status_sensor(
-                name="operator_failure_alert",
+                name=f"{self.project_name}_failure_alert",
                 monitored_jobs=monitored,
                 run_status=dg.DagsterRunStatus.FAILURE,
                 description="Alert when any operator partition fails",

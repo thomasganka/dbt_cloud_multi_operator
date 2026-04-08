@@ -1,6 +1,8 @@
 type: dbt_cloud_multi_operator.components.dbt_cloud_multi_operator_component.DbtCloudMultiOperatorComponent
 
 attributes:
+  project_name: payments
+
   # ── Operator partitions (25 countries) ──────────────────
   operators:
     - BE
@@ -45,31 +47,41 @@ attributes:
   # ── BRONZE layer (per-operator separate tables) ────────
   bronze:
     - name: bronze_transactions
-      description: "Raw transaction data per operator. Each operator has a separate bronze table (e.g., bronze_BE_transactions). Loaded via dbt Cloud with operator_id variable."
+      description: "Raw transaction data per operator. Depends on Databricks ingest_transaction_feeds job completing first."
       dbt_cloud_job_id: 100001
       dbt_select: "bronze_transactions"
       schema: bronze
+      deps:
+        - ingest_transaction_feeds
       checks:
         - name: check_bronze_transactions_not_empty
           description: "Verify transaction row count > 0 per operator"
 
     - name: bronze_customers
-      description: "Raw customer data per operator. Separate bronze table per country."
+      description: "Raw customer data per operator. Depends on Databricks CRM ingest AND geo enrichment jobs."
       dbt_cloud_job_id: 100001
       dbt_select: "bronze_customers"
       schema: bronze
+      deps:
+        - ingest_customer_crm
+        - geo_enrichment_pipeline
 
     - name: bronze_products
-      description: "Raw product catalog per operator. Separate bronze table per country."
+      description: "Raw product catalog per operator. Depends on Databricks product catalog ingest job."
       dbt_cloud_job_id: 100001
       dbt_select: "bronze_products"
       schema: bronze
+      deps:
+        - ingest_product_catalog
 
     - name: bronze_payments
-      description: "Raw payment events per operator. Separate bronze table per country."
+      description: "Raw payment events per operator. Depends on transaction feeds AND currency exchange rates."
       dbt_cloud_job_id: 100001
       dbt_select: "bronze_payments"
       schema: bronze
+      deps:
+        - ingest_transaction_feeds
+        - currency_exchange_rates
 
   # ── SILVER layer (consolidated, partitioned by operator) ─
   silver:

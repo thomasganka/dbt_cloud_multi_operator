@@ -1,0 +1,49 @@
+type: dbt_cloud_multi_operator.components.databricks_upstream_jobs_component.DatabricksUpstreamJobsComponent
+
+attributes:
+  workspace_url: "{{ env.DATABRICKS_HOST }}"
+  group_name: databricks_upstream
+  owners:
+    - "team:platform-engineering"
+
+  jobs:
+    # ── Ingestion jobs (sources for bronze dbt models) ────
+    - name: ingest_transaction_feeds
+      job_id: 200001
+      description: "Pulls raw transaction feeds from payment processors into Delta Lake landing zone. Multiple dbt bronze models depend on this."
+      cron: "0 0 * * *"
+      timezone: UTC
+
+    - name: ingest_customer_crm
+      job_id: 200002
+      description: "Syncs customer data from CRM system (Salesforce) into Delta Lake. Upstream of bronze_customers across all dbt projects."
+      cron: "30 0 * * *"
+      timezone: UTC
+
+    - name: ingest_product_catalog
+      job_id: 200003
+      description: "Imports product catalog and pricing from ERP system. Upstream of bronze_products."
+      cron: "0 1 * * *"
+      timezone: UTC
+
+    # ── Transform jobs (shared preprocessing) ─────────────
+    - name: currency_exchange_rates
+      job_id: 200004
+      description: "Fetches and computes daily FX rates for all operator currencies. Required by silver payment reconciliation models."
+      cron: "0 1 * * *"
+      timezone: UTC
+
+    - name: geo_enrichment_pipeline
+      job_id: 200005
+      description: "Enriches location data with geo attributes (region, timezone, regulatory zone). Used by logistics and marketing dbt projects."
+      deps:
+        - ingest_customer_crm
+      cron: "0 2 * * *"
+      timezone: UTC
+
+    # ── ML jobs (downstream of gold, upstream of reporting) ─
+    - name: fraud_scoring_model
+      job_id: 200006
+      description: "Runs fraud detection ML model on enriched transactions. Downstream of gold layer, upstream of compliance reporting."
+      deps:
+        - gold_revenue_summary
