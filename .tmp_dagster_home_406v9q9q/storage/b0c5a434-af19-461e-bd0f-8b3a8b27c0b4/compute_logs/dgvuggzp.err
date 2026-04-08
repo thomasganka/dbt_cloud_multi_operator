@@ -1,0 +1,9 @@
+2026-04-07 20:15:54 -0400 - dagster - DEBUG - __ASSET_JOB - b0c5a434-af19-461e-bd0f-8b3a8b27c0b4 - 80285 - LOGS_CAPTURED - Started capturing logs in process (pid: 80285).
+2026-04-07 20:15:54 -0400 - dagster - DEBUG - __ASSET_JOB - b0c5a434-af19-461e-bd0f-8b3a8b27c0b4 - 80285 - bronze_customers - STEP_START - Started execution of step "bronze_customers".
+2026-04-07 20:15:54 -0400 - dagster - INFO - __ASSET_JOB - b0c5a434-af19-461e-bd0f-8b3a8b27c0b4 - bronze_customers - [DEMO MODE] Would trigger dbt Cloud job 100001:
+  dbt run --select bronze_CY_customers
+  --vars '{operator_id: CY}'
+  Target: hooli_prod.bronze.bronze_CY_customers
+2026-04-07 20:15:54 -0400 - dagster - DEBUG - __ASSET_JOB - b0c5a434-af19-461e-bd0f-8b3a8b27c0b4 - 80285 - bronze_customers - STEP_OUTPUT - Yielded output "result" of type "Any". (Type check passed).
+2026-04-07 20:15:54 -0400 - dagster - DEBUG - __ASSET_JOB - b0c5a434-af19-461e-bd0f-8b3a8b27c0b4 - 80285 - bronze_customers - ASSET_MATERIALIZATION - Materialized value bronze_customers.
+2026-04-07 20:15:54 -0400 - dagster - DEBUG - __ASSET_JOB - b0c5a434-af19-461e-bd0f-8b3a8b27c0b4 - 80285 - bronze_customers - STEP_SUCCESS - Finished execution of step "bronze_customers" in 30ms.
